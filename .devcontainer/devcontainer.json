@@ -1,10 +1,13 @@
 {
-  "name": "Frappe Bench",
+  "name": "Frappe Bench with GitHub Integration",
   "forwardPorts": [8000, 9000, 6787],
   "remoteUser": "frappe",
   "settings": {
     "terminal.integrated.defaultProfile.linux": "bash",
-    "debug.node.autoAttach": "disabled"
+    "debug.node.autoAttach": "disabled",
+    "git.autofetch": true,
+    "git.enableSmartCommit": true,
+    "git.confirmSync": false
   },
   "dockerComposeFile": "./docker-compose.yml",
   "service": "frappe",
@@ -16,6 +19,32 @@
     "ms-vscode.live-server",
     "grapecity.gc-excelviewer",
     "mtxr.sqltools",
-    "visualstudioexptteam.vscodeintellicode"
-  ]
+    "visualstudioexptteam.vscodeintellicode",
+    "github.vscode-pull-request-github",
+    "github.github-vscode-theme",
+    "ms-vscode.vscode-json"
+  ],
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "installDirectlyFromGitHubRelease": true,
+      "version": "latest"
+    }
+  },
+  "customizations": {
+    "codespaces": {
+      "repositories": {
+        "permissions": {
+          "repository": "write",
+          "metadata": "read",
+          "contents": "write",
+          "pull_requests": "write"
+        }
+      }
+    }
+  },
+  "containerEnv": {
+    "APP_NAME": "${localEnv:APP_NAME:my_frappe_app}",
+    "CREATE_GITHUB_REPO": "${localEnv:CREATE_GITHUB_REPO:true}",
+    "AUTO_INSTALL_APP": "${localEnv:AUTO_INSTALL_APP:true}"
+  }
 }
