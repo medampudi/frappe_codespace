@@ -33,6 +33,19 @@ print_error() {
     echo -e "${RED}❌ $1${NC}"
 }
 
+# Function to check if we should run in interactive mode
+should_run_interactive() {
+    # Run interactive if:
+    # 1. We have a terminal (stdin is a tty)
+    # 2. APP_NAME is not already set as environment variable
+    # 3. Not explicitly disabled via INTERACTIVE=false
+    if [[ -t 0 && -z "$APP_NAME" && "$INTERACTIVE" != "false" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 # Function to get user input for app configuration
 get_user_configuration() {
     print_header "🎯 FRAPPE APP CONFIGURATION"
@@ -117,7 +130,7 @@ get_user_configuration() {
 }
 
 # Check if running in interactive mode or using environment variables
-if [[ -t 0 && -z "$APP_NAME" && -z "$CODESPACE_NAME" ]]; then
+if should_run_interactive; then
     # Interactive mode - get user input
     get_user_configuration
 else
@@ -131,6 +144,13 @@ else
     print_info "GitHub Repo: $CREATE_GITHUB_REPO"
     print_info "Auto Install: $AUTO_INSTALL_APP"
     echo ""
+    
+    # If in a codespace but no explicit config, show a tip
+    if [[ -n "$CODESPACE_NAME" && -z "$INTERACTIVE" ]]; then
+        print_warning "Running in automated mode"
+        print_info "💡 Tip: Set INTERACTIVE=true to enable configuration prompts"
+        echo ""
+    fi
 fi
 
 # Function to validate app name
