@@ -1,5 +1,5 @@
 {
-  "name": "Frappe Bench with GitHub Integration",
+  "name": "Frappe Bench with Interactive Setup",
   "forwardPorts": [8000, 9000, 6787],
   "remoteUser": "frappe",
   "settings": {
@@ -43,8 +43,6 @@
     }
   },
   "containerEnv": {
-    "APP_NAME": "${localEnv:APP_NAME:my_frappe_app}",
-    "CREATE_GITHUB_REPO": "${localEnv:CREATE_GITHUB_REPO:true}",
-    "AUTO_INSTALL_APP": "${localEnv:AUTO_INSTALL_APP:true}"
+    "INTERACTIVE": "true"
   }
 }
