@@ -397,6 +397,7 @@ setup_git_config() {
     
     echo "✅ Git configuration completed"
 }
+
 # Validate app name first
 if ! validate_app_name "$APP_NAME"; then
     print_error "Invalid app name: $APP_NAME"
