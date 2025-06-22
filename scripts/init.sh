@@ -1,20 +1,25 @@
-#!bin/bash
+# scripts/init.sh - Fixed version
+#!/bin/bash
 
 set -e
 
-if [[ -f "/workspaces/frappe_codespace/frappe-bench/apps/frappe" ]]
+if [[ -f "/workspace/frappe-bench/apps/frappe" ]]
 then
     echo "Bench already exists, skipping init"
     exit 0
 fi
 
-rm -rf /workspaces/frappe_codespace/.git
+rm -rf /workspace/frappe_codespace/.git
 
+# Fix Node.js setup
 source /home/frappe/.nvm/nvm.sh
+nvm install 18
 nvm alias default 18
 nvm use 18
 
+echo "source /home/frappe/.nvm/nvm.sh" >> ~/.bashrc
 echo "nvm use 18" >> ~/.bashrc
+
 cd /workspace
 
 bench init \
@@ -32,7 +37,6 @@ bench set-config -g redis_socketio "redis://redis-socketio:6379"
 
 # Remove redis from Procfile
 sed -i '/redis/d' ./Procfile
-
 
 bench new-site dev.localhost \
 --mariadb-root-password 123 \
