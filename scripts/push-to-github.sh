@@ -24,6 +24,39 @@ print_error() {
     echo -e "${RED}❌ $1${NC}"
 }
 
+print_warning() {
+    echo -e "${YELLOW}⚠️  $1${NC}"
+}
+
+# Function to authenticate with GitHub
+authenticate_github() {
+    # First, check if GH_PAT is available
+    if [[ -n "$GH_PAT" ]]; then
+        print_info "Using GH_PAT for authentication..."
+        echo "$GH_PAT" | gh auth login --with-token 2>/dev/null
+        if gh auth status &> /dev/null; then
+            print_success "Authenticated with GH_PAT"
+            return 0
+        fi
+    fi
+    
+    # Then check if GITHUB_TOKEN is available
+    if [[ -n "$GITHUB_TOKEN" ]]; then
+        print_info "Using GITHUB_TOKEN for authentication..."
+        echo "$GITHUB_TOKEN" | gh auth login --with-token 2>/dev/null
+        if gh auth status &> /dev/null; then
+            return 0
+        fi
+    fi
+    
+    # Check if already authenticated
+    if gh auth status &> /dev/null; then
+        return 0
+    fi
+    
+    return 1
+}
+
 # Check if we're in an app directory
 if [[ ! -f "setup.py" ]] || [[ ! -d ".git" ]]; then
     print_error "This script must be run from within a Frappe app directory"
@@ -38,10 +71,20 @@ APP_NAME=$(basename "$PWD")
 echo -e "${CYAN}🚀 GitHub Push Helper for: $APP_NAME${NC}"
 echo ""
 
-# Check GitHub authentication
-if ! gh auth status &> /dev/null; then
+# Try to authenticate
+if ! authenticate_github; then
     print_error "Not authenticated with GitHub"
-    echo "Please run: gh auth login"
+    echo ""
+    echo -e "${YELLOW}To authenticate, you can:${NC}"
+    echo ""
+    echo -e "${BLUE}Option 1: Use a Personal Access Token (Recommended)${NC}"
+    echo "  1. Go to: https://github.com/settings/tokens/new"
+    echo "  2. Create a token with 'repo' scope"
+    echo "  3. Run: export GH_PAT='your-token-here'"
+    echo "  4. Run this script again"
+    echo ""
+    echo -e "${BLUE}Option 2: Use GitHub CLI${NC}"
+    echo "  Run: gh auth login"
     exit 1
 fi
 
@@ -74,22 +117,58 @@ if gh repo view "$GITHUB_USERNAME/$APP_NAME" &> /dev/null; then
     print_success "Repository already exists: https://github.com/$GITHUB_USERNAME/$APP_NAME"
 else
     print_info "Repository doesn't exist. Creating..."
+    
+    # Try GitHub CLI first
     if gh repo create "$APP_NAME" \
         --private \
         --description "Frappe application: $APP_NAME" \
         --gitignore Python \
-        --license MIT; then
+        --license MIT 2>/tmp/gh_error.log; then
         print_success "Repository created!"
     else
-        print_error "Failed to create repository"
-        echo ""
-        echo "Please create the repository manually on GitHub:"
-        echo "  1. Go to: https://github.com/new"
-        echo "  2. Repository name: $APP_NAME"
-        echo "  3. Make it private"
-        echo "  4. Don't initialize with README"
-        echo ""
-        read -p "Press Enter when done..."
+        # If that fails, try API directly
+        if [[ -n "$GH_PAT" ]] || [[ -n "$GITHUB_TOKEN" ]]; then
+            local token="${GH_PAT:-$GITHUB_TOKEN}"
+            print_info "Trying GitHub API directly..."
+            
+            local response=$(curl -s -w "\n%{http_code}" -X POST \
+                -H "Authorization: token $token" \
+                -H "Accept: application/vnd.github.v3+json" \
+                https://api.github.com/user/repos \
+                -d "{
+                    \"name\": \"$APP_NAME\",
+                    \"private\": true,
+                    \"description\": \"Frappe application: $APP_NAME\",
+                    \"auto_init\": false,
+                    \"license_template\": \"mit\"
+                }")
+            
+            local http_code=$(echo "$response" | tail -n1)
+            
+            if [[ "$http_code" == "201" ]]; then
+                print_success "Repository created using API!"
+            else
+                print_error "Failed to create repository"
+                echo ""
+                echo "Please create the repository manually on GitHub:"
+                echo "  1. Go to: https://github.com/new"
+                echo "  2. Repository name: $APP_NAME"
+                echo "  3. Make it private"
+                echo "  4. Don't initialize with README"
+                echo ""
+                read -p "Press Enter when done..."
+            fi
+        else
+            print_error "Failed to create repository"
+            echo ""
+            echo "Please create the repository manually on GitHub:"
+            echo "  1. Go to: https://github.com/new"
+            echo "  2. Repository name: $APP_NAME"
+            echo "  3. Make it private"
+            echo "  4. Don't initialize with README"
+            echo ""
+            read -p "Press Enter when done..."
+        fi
     fi
 fi
 
@@ -98,6 +177,13 @@ if ! git remote get-url origin &> /dev/null; then
     print_info "Adding remote origin..."
     git remote add origin "https://github.com/$GITHUB_USERNAME/$APP_NAME.git"
     print_success "Remote added"
+fi
+
+# Configure git to use token for authentication
+if [[ -n "$GH_PAT" ]]; then
+    git config --local http.https://github.com/.extraheader "Authorization: token $GH_PAT"
+elif [[ -n "$GITHUB_TOKEN" ]]; then
+    git config --local http.https://github.com/.extraheader "Authorization: token $GITHUB_TOKEN"
 fi
 
 # Check current branch

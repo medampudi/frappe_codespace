@@ -66,14 +66,41 @@ install_github_cli() {
 
 # Function to check GitHub authentication
 check_github_auth() {
-    # Check if GITHUB_TOKEN is available (Codespaces automatically provides this)
-    if [[ -n "$GITHUB_TOKEN" ]]; then
-        echo "$GITHUB_TOKEN" | gh auth login --with-token 2>/dev/null
+    # First, check if GH_PAT is available (your custom PAT)
+    if [[ -n "$GH_PAT" ]]; then
+        print_info "Using GH_PAT for authentication..."
+        echo "$GH_PAT" | gh auth login --with-token 2>/dev/null
+        if gh auth status &> /dev/null; then
+            print_success "Authenticated with GH_PAT"
+            return 0
+        fi
     fi
     
-    # Check if authenticated
+    # Then check if GITHUB_TOKEN is available (Codespaces default)
+    if [[ -n "$GITHUB_TOKEN" ]]; then
+        print_info "Using GITHUB_TOKEN for authentication..."
+        echo "$GITHUB_TOKEN" | gh auth login --with-token 2>/dev/null
+        if gh auth status &> /dev/null; then
+            # Check if token has repo scope
+            if gh auth status 2>&1 | grep -q "repo" || gh repo list --limit 1 &> /dev/null; then
+                print_success "Authenticated with GITHUB_TOKEN"
+                return 0
+            else
+                print_warning "GITHUB_TOKEN lacks repository creation permissions"
+                return 1
+            fi
+        fi
+    fi
+    
+    # Check if already authenticated
     if gh auth status &> /dev/null; then
-        return 0
+        # Verify token has repo scope
+        if gh auth status 2>&1 | grep -q "repo" || gh repo list --limit 1 &> /dev/null; then
+            return 0
+        else
+            print_warning "Current token lacks repository creation permissions"
+            return 1
+        fi
     fi
     
     return 1
@@ -103,9 +130,24 @@ setup_github_auth_interactive() {
         return 0
     fi
     
-    echo -e "${YELLOW}GitHub integration requires authentication.${NC}"
-    echo -e "${CYAN}This will allow automatic repository creation and code push.${NC}"
+    echo -e "${YELLOW}GitHub integration requires authentication with repository permissions.${NC}"
     echo ""
+    
+    # Check if we're in Codespaces and guide the user
+    if [[ -n "$CODESPACES" ]]; then
+        echo -e "${CYAN}You're in GitHub Codespaces. Here are your options:${NC}"
+        echo ""
+        echo -e "${BLUE}Option 1: Use a Personal Access Token (Recommended)${NC}"
+        echo "  1. Go to: https://github.com/settings/tokens/new"
+        echo "  2. Create a token with 'repo' scope"
+        echo "  3. Add it as GH_PAT secret in your Codespace settings"
+        echo "  4. Restart the terminal or run: export GH_PAT='your-token'"
+        echo ""
+        echo -e "${BLUE}Option 2: Use GitHub CLI authentication${NC}"
+        echo "  This will open a browser for authentication"
+        echo ""
+    fi
+    
     read -p "Would you like to authenticate with GitHub now? [Y/n]: " auth_choice
     
     case "$auth_choice" in
@@ -114,21 +156,28 @@ setup_github_auth_interactive() {
             return 1
             ;;
         *)
+            # Try to authenticate with better scopes
             print_info "Opening browser for GitHub authentication..."
             echo -e "${YELLOW}Please complete the authentication in your browser${NC}"
             
-            if gh auth login --scopes 'repo,workflow,write:packages' --web; then
+            if gh auth login --scopes 'repo,workflow,write:packages,delete_repo' --web; then
                 print_success "GitHub authentication completed!"
                 return 0
             else
                 print_error "GitHub authentication failed"
+                echo ""
+                echo -e "${YELLOW}Alternative: Set up a Personal Access Token${NC}"
+                echo "  1. Create a token at: https://github.com/settings/tokens/new"
+                echo "  2. Select 'repo' scope"
+                echo "  3. Run: export GH_PAT='your-token-here'"
+                echo "  4. Run this script again"
                 return 1
             fi
             ;;
     esac
 }
 
-# Function to create GitHub repository
+# Function to create GitHub repository with better error handling
 create_github_repo() {
     local repo_name="$1"
     local github_username="$2"
@@ -138,10 +187,18 @@ create_github_repo() {
     # Check if repo already exists
     if gh repo view "$github_username/$repo_name" &> /dev/null; then
         print_warning "Repository $repo_name already exists"
-        return 0
+        read -p "Use existing repository? [Y/n]: " use_existing
+        case "$use_existing" in
+            [nN][oO]|[nN])
+                return 1
+                ;;
+            *)
+                return 0
+                ;;
+        esac
     fi
     
-    # Create private repository
+    # Try to create repository with GitHub CLI
     if gh repo create "$repo_name" \
         --private \
         --description "Frappe application: $repo_name" \
@@ -150,30 +207,76 @@ create_github_repo() {
         print_success "Repository created: https://github.com/$github_username/$repo_name"
         return 0
     else
-        print_error "Failed to create repository"
+        # Analyze the error
+        local error_msg=$(cat /tmp/gh_error.log 2>/dev/null || echo "Unknown error")
         
-        # Check if it's a permissions issue
-        if grep -q "403" /tmp/gh_error.log 2>/dev/null || grep -q "Resource not accessible" /tmp/gh_error.log 2>/dev/null; then
+        if echo "$error_msg" | grep -q "HTTP 403" || echo "$error_msg" | grep -q "Resource not accessible"; then
+            print_error "Permission denied - token lacks repository creation scope"
             echo ""
-            print_warning "GitHub permissions issue detected!"
-            echo -e "${YELLOW}The GitHub token doesn't have sufficient permissions to create repositories.${NC}"
+            echo -e "${YELLOW}The current token doesn't have permission to create repositories.${NC}"
             echo ""
-            echo -e "${CYAN}To fix this, you have two options:${NC}"
+            echo -e "${CYAN}To fix this:${NC}"
             echo ""
-            echo -e "${BLUE}Option 1: Grant permissions to Codespace${NC}"
-            echo "  1. Go to: https://github.com/settings/codespaces"
-            echo "  2. Find this Codespace and click 'Manage'"
-            echo "  3. Under 'Repository permissions', grant 'write' access"
-            echo "  4. Restart the Codespace"
+            echo -e "${BLUE}Option 1: Create a Personal Access Token${NC}"
+            echo "  1. Go to: https://github.com/settings/tokens/new"
+            echo "  2. Name: 'Codespaces Repo Creation'"
+            echo "  3. Select scopes: 'repo' (full control of private repositories)"
+            echo "  4. Generate token and copy it"
+            echo "  5. In Codespace terminal, run:"
+            echo "     export GH_PAT='paste-your-token-here'"
+            echo "  6. Run this script again"
             echo ""
-            echo -e "${BLUE}Option 2: Create repository manually${NC}"
-            echo "  You can create the repository manually and push your code:"
+            echo -e "${BLUE}Option 2: Use the GitHub API directly${NC}"
+            echo "  We'll try this now..."
             echo ""
-            echo "  # Create repo on GitHub.com, then run:"
-            echo "  cd /workspace/frappe-bench/apps/$repo_name"
-            echo "  git remote add origin https://github.com/$github_username/$repo_name.git"
-            echo "  git push -u origin develop"
+            
+            # Try using curl with the token directly
+            if [[ -n "$GH_PAT" ]] || [[ -n "$GITHUB_TOKEN" ]]; then
+                local token="${GH_PAT:-$GITHUB_TOKEN}"
+                print_info "Attempting to create repository using API directly..."
+                
+                local response=$(curl -s -w "\n%{http_code}" -X POST \
+                    -H "Authorization: token $token" \
+                    -H "Accept: application/vnd.github.v3+json" \
+                    https://api.github.com/user/repos \
+                    -d "{
+                        \"name\": \"$repo_name\",
+                        \"private\": true,
+                        \"description\": \"Frappe application: $repo_name\",
+                        \"auto_init\": false,
+                        \"license_template\": \"mit\"
+                    }")
+                
+                local http_code=$(echo "$response" | tail -n1)
+                local body=$(echo "$response" | head -n-1)
+                
+                if [[ "$http_code" == "201" ]]; then
+                    print_success "Repository created successfully using GitHub API!"
+                    return 0
+                else
+                    print_error "API creation failed with HTTP $http_code"
+                    echo "Error: $(echo "$body" | jq -r '.message' 2>/dev/null || echo "$body")"
+                fi
+            fi
+            
             echo ""
+            echo -e "${BLUE}Option 3: Create repository manually${NC}"
+            echo "  1. Go to: https://github.com/new"
+            echo "  2. Repository name: $repo_name"
+            echo "  3. Make it private"
+            echo "  4. DON'T initialize with README"
+            echo "  5. Create repository"
+            echo "  6. Come back here and we'll push your code"
+            echo ""
+            read -p "Have you created the repository manually? [y/N]: " manual_created
+            if [[ "$manual_created" =~ ^[Yy]$ ]]; then
+                return 0
+            fi
+        elif echo "$error_msg" | grep -q "Name already exists"; then
+            print_error "A repository with this name already exists in your account"
+        else
+            print_error "Failed to create repository"
+            echo "Error: $error_msg"
         fi
         
         return 1
@@ -185,6 +288,13 @@ setup_git_repository() {
     local app_name="$1"
     local github_username="$2"
     
+    # Ensure we're in the app directory
+    if [[ ! -d ".git" ]]; then
+        git init
+        git add .
+        git commit -m "Initial commit: Frappe app $app_name" 2>/dev/null || true
+    fi
+    
     # Create and switch to develop branch
     print_info "Setting up develop branch..."
     git checkout -b develop 2>/dev/null || git checkout develop
@@ -194,9 +304,16 @@ setup_git_repository() {
     git remote remove origin 2>/dev/null || true
     git remote add origin "https://github.com/$github_username/$app_name.git"
     
+    # Configure git to use token for authentication
+    if [[ -n "$GH_PAT" ]]; then
+        git config --local http.https://github.com/.extraheader "Authorization: token $GH_PAT"
+    elif [[ -n "$GITHUB_TOKEN" ]]; then
+        git config --local http.https://github.com/.extraheader "Authorization: token $GITHUB_TOKEN"
+    fi
+    
     # Push to GitHub
     print_info "Pushing to GitHub..."
-    if git push -u origin develop; then
+    if git push -u origin develop 2>/dev/null; then
         # Set develop as default branch
         gh repo edit "$github_username/$app_name" --default-branch develop 2>/dev/null || true
         
@@ -204,8 +321,20 @@ setup_git_repository() {
         echo -e "${CYAN}🔗 Repository URL:${NC} https://github.com/$github_username/$app_name"
         return 0
     else
-        print_error "Failed to push to GitHub"
-        return 1
+        print_warning "Initial push failed, trying with force..."
+        if git push -u origin develop --force; then
+            gh repo edit "$github_username/$app_name" --default-branch develop 2>/dev/null || true
+            print_success "GitHub integration completed!"
+            echo -e "${CYAN}🔗 Repository URL:${NC} https://github.com/$github_username/$app_name"
+            return 0
+        else
+            print_error "Failed to push to GitHub"
+            echo ""
+            echo -e "${YELLOW}You can try pushing manually later:${NC}"
+            echo "  cd /workspace/frappe-bench/apps/$app_name"
+            echo "  git push -u origin develop"
+            return 1
+        fi
     fi
 }
 
@@ -280,6 +409,11 @@ create_app() {
     return 0
 }
 
+# Check if GitHub CLI is installed
+if ! command -v gh &> /dev/null; then
+    install_github_cli
+fi
+
 # Clear screen for better UX
 clear
 
@@ -288,6 +422,18 @@ print_header "🚀 FRAPPE APP CREATION WIZARD"
 
 echo -e "${CYAN}Welcome to the Frappe app creation wizard!${NC}"
 echo -e "${CYAN}This will guide you through creating your first Frappe application.${NC}"
+echo ""
+
+# Check for GitHub token
+if [[ -n "$GH_PAT" ]]; then
+    print_success "GitHub PAT detected"
+elif [[ -n "$GITHUB_TOKEN" ]]; then
+    print_info "Codespaces GitHub token detected"
+else
+    print_warning "No GitHub token detected"
+    echo -e "${YELLOW}For GitHub integration, you'll need to authenticate or set up a PAT${NC}"
+fi
+
 echo ""
 
 # Get app name
@@ -328,11 +474,6 @@ case "$create_repo_input" in
     *)
         CREATE_GITHUB_REPO="true"
         print_info "GitHub integration enabled"
-        
-        # Check if GitHub CLI is installed
-        if ! command -v gh &> /dev/null; then
-            install_github_cli
-        fi
         ;;
 esac
 
