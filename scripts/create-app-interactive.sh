@@ -146,11 +146,36 @@ create_github_repo() {
         --private \
         --description "Frappe application: $repo_name" \
         --gitignore Python \
-        --license MIT; then
+        --license MIT 2>/tmp/gh_error.log; then
         print_success "Repository created: https://github.com/$github_username/$repo_name"
         return 0
     else
         print_error "Failed to create repository"
+        
+        # Check if it's a permissions issue
+        if grep -q "403" /tmp/gh_error.log 2>/dev/null || grep -q "Resource not accessible" /tmp/gh_error.log 2>/dev/null; then
+            echo ""
+            print_warning "GitHub permissions issue detected!"
+            echo -e "${YELLOW}The GitHub token doesn't have sufficient permissions to create repositories.${NC}"
+            echo ""
+            echo -e "${CYAN}To fix this, you have two options:${NC}"
+            echo ""
+            echo -e "${BLUE}Option 1: Grant permissions to Codespace${NC}"
+            echo "  1. Go to: https://github.com/settings/codespaces"
+            echo "  2. Find this Codespace and click 'Manage'"
+            echo "  3. Under 'Repository permissions', grant 'write' access"
+            echo "  4. Restart the Codespace"
+            echo ""
+            echo -e "${BLUE}Option 2: Create repository manually${NC}"
+            echo "  You can create the repository manually and push your code:"
+            echo ""
+            echo "  # Create repo on GitHub.com, then run:"
+            echo "  cd /workspace/frappe-bench/apps/$repo_name"
+            echo "  git remote add origin https://github.com/$github_username/$repo_name.git"
+            echo "  git push -u origin develop"
+            echo ""
+        fi
+        
         return 1
     fi
 }
@@ -241,6 +266,11 @@ create_app() {
             
             if create_github_repo "$app_name" "$github_username"; then
                 setup_git_repository "$app_name" "$github_username"
+            else
+                print_warning "GitHub repository creation failed, but your app is ready locally!"
+                echo ""
+                echo -e "${CYAN}Your app is created and installed locally.${NC}"
+                echo -e "${CYAN}You can push to GitHub manually later when permissions are fixed.${NC}"
             fi
         else
             print_warning "GitHub integration skipped (not authenticated)"

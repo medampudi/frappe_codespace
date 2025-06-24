@@ -174,6 +174,35 @@ Docker containers running:
 
 ## 🚦 Troubleshooting
 
+### GitHub Permissions Issue (403 Error)
+
+**Problem**: "Resource not accessible by integration" when creating repository
+
+**Solution 1 - Grant Codespace Permissions:**
+1. Go to [GitHub Codespaces Settings](https://github.com/settings/codespaces)
+2. Find your Codespace and click "Manage"
+3. Under "Repository permissions", ensure it has "write" access
+4. Under "Account permissions", grant access to create repositories
+5. Restart the Codespace
+
+**Solution 2 - Manual Repository Creation:**
+```bash
+# Create repository on GitHub.com first, then:
+cd /workspace/frappe-bench/apps/your_app_name
+/workspace/scripts/push-to-github.sh
+
+# Or manually:
+git remote add origin https://github.com/your-username/your_app_name.git
+git push -u origin develop
+```
+
+**Solution 3 - Re-authenticate with Full Permissions:**
+```bash
+# Logout and login with full scopes
+gh auth logout
+gh auth login --scopes 'repo,workflow,write:packages,admin:repo_hook'
+```
+
 ### App Creation Issues
 
 **If the welcome prompt doesn't appear:**

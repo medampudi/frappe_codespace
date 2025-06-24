@@ -32,12 +32,19 @@
   },
   "customizations": {
     "codespaces": {
+      "openFiles": [
+        "README.md"
+      ],
       "repositories": {
-        "permissions": {
-          "repository": "write",
-          "metadata": "read",
-          "contents": "write",
-          "pull_requests": "write"
+        "*": {
+          "permissions": {
+            "contents": "write",
+            "metadata": "read",
+            "administration": "write",
+            "pullRequests": "write",
+            "issues": "write",
+            "actions": "write"
+          }
         }
       }
     }

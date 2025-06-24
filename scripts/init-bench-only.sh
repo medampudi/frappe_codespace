@@ -59,7 +59,7 @@ print_header "🏗️ FRAPPE BENCH INITIALIZATION"
 
 # Make all scripts executable first
 print_info "Setting script permissions..."
-chmod +x /workspace/scripts/*.sh
+chmod +x /workspace/scripts/*.sh 2>/dev/null || true
 
 # Check if bench already exists
 if [[ -d "/workspace/frappe-bench/apps/frappe" ]]; then
