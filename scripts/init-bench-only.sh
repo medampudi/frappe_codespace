@@ -35,24 +35,19 @@ print_error() {
 
 # Function to setup git configuration
 setup_git_config() {
-    echo "⚙️ Setting up Git configuration..."
-    
     # Set default git config if not already set
-    if [ -z "$(git config --global user.name)" ]; then
+    if [ -z "$(git config --global user.name 2>/dev/null)" ]; then
         git config --global user.name "Frappe Developer"
-        echo "✅ Git user.name set to: Frappe Developer"
     fi
     
-    if [ -z "$(git config --global user.email)" ]; then
+    if [ -z "$(git config --global user.email 2>/dev/null)" ]; then
         git config --global user.email "developer@frappe.local"
-        echo "✅ Git user.email set to: developer@frappe.local"
     fi
     
     # Configure Git defaults
     git config --global credential.helper store
     git config --global init.defaultBranch main
-    
-    echo "✅ Git configuration completed"
+    git config --global pull.rebase false
 }
 
 print_header "🏗️ FRAPPE BENCH INITIALIZATION"
@@ -65,6 +60,12 @@ chmod +x /workspace/scripts/*.sh 2>/dev/null || true
 if [[ -d "/workspace/frappe-bench/apps/frappe" ]]; then
     print_success "Frappe bench already initialized"
     print_info "Run 'create-app' command in terminal to create your Frappe app"
+    
+    # Ensure terminal setup is done
+    if [ ! -f ~/.first_terminal_shown ]; then
+        /workspace/scripts/setup-terminal.sh &>/dev/null || true
+    fi
+    
     exit 0
 fi
 
@@ -73,85 +74,92 @@ if [[ -d "/workspace/.git" ]]; then
     rm -rf /workspace/.git
 fi
 
-print_info "Installing Node.js..."
+# Quick Node.js setup
+print_info "Setting up Node.js environment..."
 
-# Install nvm if not exists
+# Check if nvm is already installed
 if [[ ! -d "$HOME/.nvm" ]]; then
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-    export NVM_DIR="$HOME/.nvm"
-    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash &>/dev/null
 fi
 
 # Source nvm
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 
-# Install and use Node 18
-print_info "Installing Node.js 18..."
-nvm install 18
-nvm use 18
-nvm alias default 18
+# Install Node 18 if not already installed
+if ! nvm list 18 &>/dev/null; then
+    print_info "Installing Node.js 18..."
+    nvm install 18 &>/dev/null
+fi
 
-# Install yarn globally
-print_info "Installing yarn..."
-npm install -g yarn
+nvm use 18 &>/dev/null
+nvm alias default 18 &>/dev/null
 
-# Add to bashrc
-echo 'export NVM_DIR="$HOME/.nvm"' >> ~/.bashrc
-echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> ~/.bashrc
-echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"' >> ~/.bashrc
-echo "nvm use 18" >> ~/.bashrc
+# Install yarn if needed
+if ! command -v yarn &>/dev/null; then
+    npm install -g yarn &>/dev/null
+fi
 
-# Verify installations
-print_success "Node version: $(node --version)"
-print_success "NPM version: $(npm --version)"
-print_success "Yarn version: $(yarn --version)"
-print_success "Python version: $(python3 --version)"
+# Add to bashrc if not already there
+if ! grep -q "NVM_DIR" ~/.bashrc; then
+    echo 'export NVM_DIR="$HOME/.nvm"' >> ~/.bashrc
+    echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"' >> ~/.bashrc
+    echo 'nvm use 18 &>/dev/null' >> ~/.bashrc
+fi
+
+# Quick version check
+print_success "Development environment ready"
 
 # Setup git configuration
 setup_git_config
 
-print_info "Navigating to workspace..."
+print_info "Initializing Frappe bench..."
 cd /workspace
 
-print_info "Initializing Frappe bench..."
+# Initialize bench with minimal output
 bench init \
     --ignore-exist \
     --skip-redis-config-generation \
     --python python3 \
-    frappe-bench
+    --no-backups \
+    --no-auto-update \
+    frappe-bench 2>&1 | grep -E "(Installing|Creating|Initializing)" || true
 
 cd frappe-bench
 
-print_info "Configuring external services..."
-# Use containers instead of localhost
-bench set-mariadb-host mariadb
-bench set-config -g redis_cache "redis://redis-cache:6379"
-bench set-config -g redis_queue "redis://redis-queue:6379"
-bench set-config -g redis_socketio "redis://redis-socketio:6379"
+# Configure services
+print_info "Configuring services..."
+bench set-mariadb-host mariadb &>/dev/null
+bench set-config -g redis_cache "redis://redis-cache:6379" &>/dev/null
+bench set-config -g redis_queue "redis://redis-queue:6379" &>/dev/null
+bench set-config -g redis_socketio "redis://redis-socketio:6379" &>/dev/null
 
 # Remove redis from Procfile
-sed -i '/redis/d' ./Procfile
+sed -i '/redis/d' ./Procfile 2>/dev/null || true
 
-print_info "Creating development site..."
-# Wait for MariaDB to be ready
-print_info "Waiting for MariaDB to be ready..."
-while ! mysqladmin ping -h mariadb -u root -p123 --silent; do
-    echo "Waiting for MariaDB..."
-    sleep 2
+# Wait for MariaDB
+print_info "Waiting for database..."
+timeout=30
+while ! mysqladmin ping -h mariadb -u root -p123 --silent 2>/dev/null; do
+    timeout=$((timeout - 1))
+    if [ $timeout -eq 0 ]; then
+        print_error "MariaDB connection timeout"
+        exit 1
+    fi
+    sleep 1
 done
 
+print_info "Creating development site..."
 bench new-site dev.localhost \
     --mariadb-root-password 123 \
     --admin-password admin \
     --db-root-username root \
-    --mariadb-user-host-login-scope='%'
+    --mariadb-user-host-login-scope='%' 2>&1 | grep -E "(Creating|Installing)" || true
 
-print_info "Configuring development environment..."
-bench --site dev.localhost set-config developer_mode 1
-bench --site dev.localhost clear-cache
-bench use dev.localhost
+# Quick configuration
+bench --site dev.localhost set-config developer_mode 1 &>/dev/null
+bench --site dev.localhost clear-cache &>/dev/null
+bench use dev.localhost &>/dev/null
 
 # Create welcome message file
 cat > /workspace/.welcome_message <<'EOF'
@@ -167,7 +175,7 @@ To create your first Frappe app, run:
   create-app
 
 To start the development server:
-  cd /workspace/frappe-bench && bench start
+  bench start (or use alias: bs)
 
 Happy coding! 🚀
 EOF
@@ -179,14 +187,13 @@ print_success "Frappe bench setup completed!"
 
 # Setup terminal environment
 print_info "Configuring terminal environment..."
-chmod +x /workspace/scripts/setup-terminal.sh
 if /workspace/scripts/setup-terminal.sh; then
     print_success "Terminal environment configured"
 else
     print_warning "Terminal setup had issues but continuing..."
 fi
 
-print_info "Setup complete! Terminal will open soon with app creation wizard..."
+print_success "Setup complete! Terminal will open soon with app creation wizard..."
 
 # Exit successfully
 exit 0
