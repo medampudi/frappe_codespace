@@ -1,21 +1,52 @@
 {
-  "name": "Frappe Bench",
+  "name": "Frappe Bench with Interactive Setup",
   "forwardPorts": [8000, 9000, 6787],
   "remoteUser": "frappe",
   "settings": {
     "terminal.integrated.defaultProfile.linux": "bash",
-    "debug.node.autoAttach": "disabled"
+    "debug.node.autoAttach": "disabled",
+    "git.autofetch": true,
+    "git.enableSmartCommit": true,
+    "git.confirmSync": false
   },
   "dockerComposeFile": "./docker-compose.yml",
   "service": "frappe",
   "workspaceFolder": "/workspace/frappe-bench",
-  "postCreateCommand": "bash /workspace/scripts/init.sh",
+  "postCreateCommand": "bash /workspace/scripts/init-bench-only.sh",
   "shutdownAction": "stopCompose",
   "extensions": [
     "ms-python.python",
     "ms-vscode.live-server",
     "grapecity.gc-excelviewer",
     "mtxr.sqltools",
-    "visualstudioexptteam.vscodeintellicode"
-  ]
+    "visualstudioexptteam.vscodeintellicode",
+    "github.vscode-pull-request-github",
+    "github.github-vscode-theme",
+    "ms-vscode.vscode-json"
+  ],
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "installDirectlyFromGitHubRelease": true,
+      "version": "latest"
+    }
+  },
+  "customizations": {
+    "codespaces": {
+      "openFiles": [
+        "README.md"
+      ],
+      "repositories": {
+        "*": {
+          "permissions": {
+            "contents": "write",
+            "metadata": "read",
+            "administration": "write",
+            "pullRequests": "write",
+            "issues": "write",
+            "actions": "write"
+          }
+        }
+      }
+    }
+  }
 }
