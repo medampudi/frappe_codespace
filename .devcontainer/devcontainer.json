@@ -12,7 +12,7 @@
   "dockerComposeFile": "./docker-compose.yml",
   "service": "frappe",
   "workspaceFolder": "/workspace/frappe-bench",
-  "postCreateCommand": "bash /workspace/scripts/init.sh",
+  "postCreateCommand": "bash /workspace/scripts/init-bench-only.sh",
   "shutdownAction": "stopCompose",
   "extensions": [
     "ms-python.python",
@@ -41,8 +41,5 @@
         }
       }
     }
-  },
-  "containerEnv": {
-    "INTERACTIVE": "true"
   }
 }
