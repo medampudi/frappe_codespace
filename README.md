@@ -5,9 +5,58 @@ A complete development environment for Frappe applications with **interactive ap
 ## 🚀 Quick Start
 
 1. **Launch Codespace**: [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new)
-2. **Wait for setup**: Frappe bench initializes automatically (takes ~5 minutes)
-3. **Create your app**: When terminal opens, you'll be prompted to create your first app
-4. **Start coding**: Your app and GitHub repo are ready!
+2. **Setup GitHub Token**: See [GitHub Token Setup](#github-token-setup) section below
+3. **Wait for setup**: Frappe bench initializes automatically (takes ~5 minutes)
+4. **Create your app**: When terminal opens, you'll be prompted to create your first app
+5. **Start coding**: Your app and GitHub repo are ready!
+
+## 🔐 GitHub Token Setup
+
+GitHub Codespaces have limited permissions by default. To create repositories and push code, you need a Personal Access Token (PAT).
+
+### Creating a Fine-grained Personal Access Token
+
+1. **Go to GitHub Token Settings**
+   - Visit: https://github.com/settings/tokens?type=beta
+   - Or navigate: GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens
+
+2. **Create New Token**
+   - Click "Generate new token"
+   - **Name**: `Frappe Codespaces Development`
+   - **Expiration**: 90 days (recommended)
+   - **Repository access**: All repositories
+   - **Permissions**:
+     - **Repository permissions**:
+       - Contents: Read and Write
+       - Metadata: Read
+       - Pull requests: Read and Write
+       - Actions: Write (optional)
+       - Administration: Write (for repo creation)
+
+3. **Generate and Copy Token**
+   - Click "Generate token"
+   - **IMPORTANT**: Copy the token immediately (starts with `github_pat_`)
+
+### Adding Token to Codespace
+
+#### Option A: As Codespace Secret (Recommended)
+1. Go to [Codespace Settings](https://github.com/settings/codespaces)
+2. Click "New secret"
+3. Name: `GH_PAT`
+4. Value: Paste your token
+5. Repository access: Select your repositories
+6. Restart your Codespace
+
+#### Option B: As Repository Secret
+1. Go to your repository settings
+2. Settings → Secrets and variables → Codespaces
+3. Add new secret named `GH_PAT`
+4. Restart Codespace
+
+#### Option C: Manual Export (Temporary)
+```bash
+export GH_PAT='github_pat_your_token_here'
+```
 
 ## 🎯 How It Works
 
@@ -174,33 +223,39 @@ Docker containers running:
 
 ## 🚦 Troubleshooting
 
+### GitHub Authentication Issues
+
+**"remote: invalid credentials" Error**
+
+This happens when using fine-grained PATs incorrectly. Fix:
+
+```bash
+# Set your PAT
+export GH_PAT='github_pat_your_token_here'
+
+# Navigate to your app
+cd /workspace/frappe-bench/apps/your_app_name
+
+# Push using the correct format
+git remote set-url origin https://your-username:${GH_PAT}@github.com/your-username/your_app_name.git
+git push -u origin develop
+git remote set-url origin https://github.com/your-username/your_app_name.git
+```
+
 ### GitHub Permissions Issue (403 Error)
 
 **Problem**: "Resource not accessible by integration" when creating repository
 
-**Solution 1 - Grant Codespace Permissions:**
-1. Go to [GitHub Codespaces Settings](https://github.com/settings/codespaces)
-2. Find your Codespace and click "Manage"
-3. Under "Repository permissions", ensure it has "write" access
-4. Under "Account permissions", grant access to create repositories
-5. Restart the Codespace
+**Solution 1 - Use Personal Access Token:**
+1. Create a fine-grained PAT with proper permissions (see [GitHub Token Setup](#github-token-setup))
+2. Add as `GH_PAT` secret in Codespace settings
+3. Restart Codespace
 
 **Solution 2 - Manual Repository Creation:**
 ```bash
 # Create repository on GitHub.com first, then:
 cd /workspace/frappe-bench/apps/your_app_name
 /workspace/scripts/push-to-github.sh
-
-# Or manually:
-git remote add origin https://github.com/your-username/your_app_name.git
-git push -u origin develop
-```
-
-**Solution 3 - Re-authenticate with Full Permissions:**
-```bash
-# Logout and login with full scopes
-gh auth logout
-gh auth login --scopes 'repo,workflow,write:packages,admin:repo_hook'
 ```
 
 ### App Creation Issues
@@ -223,26 +278,6 @@ cd apps/my_app
 git init
 git add .
 git commit -m "Initial commit"
-```
-
-### GitHub Integration Issues
-
-**Authentication failed:**
-```bash
-# Re-authenticate with GitHub
-gh auth login --scopes 'repo,workflow,write:packages'
-
-# Check status
-gh auth status
-```
-
-**Repository creation failed:**
-```bash
-# Create manually
-cd /workspace/frappe-bench/apps/your_app
-gh repo create your_app --private
-git remote add origin https://github.com/username/your_app.git
-git push -u origin main
 ```
 
 ### Development Server Issues

@@ -283,7 +283,7 @@ create_github_repo() {
     fi
 }
 
-# Function to setup git repository
+# Function to setup git repository with proper authentication for fine-grained PATs
 setup_git_repository() {
     local app_name="$1"
     local github_username="$2"
@@ -304,35 +304,69 @@ setup_git_repository() {
     git remote remove origin 2>/dev/null || true
     git remote add origin "https://github.com/$github_username/$app_name.git"
     
-    # Configure git to use token for authentication
-    if [[ -n "$GH_PAT" ]]; then
-        git config --local http.https://github.com/.extraheader "Authorization: token $GH_PAT"
-    elif [[ -n "$GITHUB_TOKEN" ]]; then
-        git config --local http.https://github.com/.extraheader "Authorization: token $GITHUB_TOKEN"
+    # Configure git credentials for fine-grained PATs
+    print_info "Configuring git authentication..."
+    
+    # Store credentials properly for fine-grained PATs
+    local token="${GH_PAT:-$GITHUB_TOKEN}"
+    if [[ -n "$token" ]]; then
+        # Configure credential helper
+        git config --local credential.helper store
+        
+        # For fine-grained PATs, we need to use username:token format
+        # Temporarily add the token to the remote URL for the push
+        git remote set-url origin "https://${github_username}:${token}@github.com/${github_username}/${app_name}.git"
     fi
     
     # Push to GitHub
     print_info "Pushing to GitHub..."
-    if git push -u origin develop 2>/dev/null; then
+    if git push -u origin develop 2>&1; then
         # Set develop as default branch
         gh repo edit "$github_username/$app_name" --default-branch develop 2>/dev/null || true
+        
+        # Remove token from URL for security
+        git remote set-url origin "https://github.com/$github_username/$app_name.git"
+        
+        # Store credentials for future use
+        if [[ -n "$token" ]]; then
+            echo "https://${github_username}:${token}@github.com" > ~/.git-credentials
+            chmod 600 ~/.git-credentials
+        fi
         
         print_success "GitHub integration completed!"
         echo -e "${CYAN}🔗 Repository URL:${NC} https://github.com/$github_username/$app_name"
         return 0
     else
-        print_warning "Initial push failed, trying with force..."
-        if git push -u origin develop --force; then
+        print_warning "Initial push failed, trying alternative method..."
+        
+        # Try pushing to main first, then create develop
+        if git push -u origin develop:main --force 2>&1; then
+            git push origin develop 2>&1 || true
             gh repo edit "$github_username/$app_name" --default-branch develop 2>/dev/null || true
+            
+            # Remove token from URL
+            git remote set-url origin "https://github.com/$github_username/$app_name.git"
+            
+            # Store credentials
+            if [[ -n "$token" ]]; then
+                echo "https://${github_username}:${token}@github.com" > ~/.git-credentials
+                chmod 600 ~/.git-credentials
+            fi
+            
             print_success "GitHub integration completed!"
             echo -e "${CYAN}🔗 Repository URL:${NC} https://github.com/$github_username/$app_name"
             return 0
         else
+            # Remove token from URL even if push failed
+            git remote set-url origin "https://github.com/$github_username/$app_name.git"
+            
             print_error "Failed to push to GitHub"
             echo ""
             echo -e "${YELLOW}You can try pushing manually later:${NC}"
             echo "  cd /workspace/frappe-bench/apps/$app_name"
+            echo "  git remote set-url origin https://${github_username}:\${GH_PAT}@github.com/${github_username}/$app_name.git"
             echo "  git push -u origin develop"
+            echo "  git remote set-url origin https://github.com/${github_username}/$app_name.git"
             return 1
         fi
     fi

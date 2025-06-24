@@ -179,11 +179,21 @@ if ! git remote get-url origin &> /dev/null; then
     print_success "Remote added"
 fi
 
-# Configure git to use token for authentication
-if [[ -n "$GH_PAT" ]]; then
-    git config --local http.https://github.com/.extraheader "Authorization: token $GH_PAT"
-elif [[ -n "$GITHUB_TOKEN" ]]; then
-    git config --local http.https://github.com/.extraheader "Authorization: token $GITHUB_TOKEN"
+# Configure git credentials for fine-grained PATs
+print_info "Configuring git authentication..."
+
+# Store credentials properly for fine-grained PATs
+local token="${GH_PAT:-$GITHUB_TOKEN}"
+if [[ -n "$token" ]]; then
+    # Configure credential helper
+    git config --global credential.helper store
+    
+    # Store credentials for future use
+    echo "https://${GITHUB_USERNAME}:${token}@github.com" > ~/.git-credentials
+    chmod 600 ~/.git-credentials
+    
+    # Temporarily add the token to the remote URL for this push
+    git remote set-url origin "https://${GITHUB_USERNAME}:${token}@github.com/${GITHUB_USERNAME}/${APP_NAME}.git"
 fi
 
 # Check current branch
@@ -193,15 +203,23 @@ print_info "Current branch: $CURRENT_BRANCH"
 # Push to GitHub
 echo ""
 print_info "Pushing to GitHub..."
-if git push -u origin "$CURRENT_BRANCH"; then
+if git push -u origin "$CURRENT_BRANCH" 2>&1; then
+    # Remove token from URL for security
+    git remote set-url origin "https://github.com/$GITHUB_USERNAME/$APP_NAME.git"
+    
     print_success "Successfully pushed to GitHub!"
     echo ""
     echo -e "${GREEN}🎉 Your app is now on GitHub!${NC}"
     echo -e "${CYAN}Repository URL:${NC} https://github.com/$GITHUB_USERNAME/$APP_NAME"
     echo -e "${CYAN}Clone command:${NC} git clone https://github.com/$GITHUB_USERNAME/$APP_NAME.git"
 else
+    # Remove token from URL even if push failed
+    git remote set-url origin "https://github.com/$GITHUB_USERNAME/$APP_NAME.git"
+    
     print_error "Failed to push to GitHub"
     echo ""
     echo "You can try manually:"
+    echo "  git remote set-url origin https://${GITHUB_USERNAME}:\${GH_PAT}@github.com/${GITHUB_USERNAME}/$APP_NAME.git"
     echo "  git push -u origin $CURRENT_BRANCH"
+    echo "  git remote set-url origin https://github.com/${GITHUB_USERNAME}/$APP_NAME.git"
 fi
