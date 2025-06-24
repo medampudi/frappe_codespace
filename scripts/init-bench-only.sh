@@ -57,6 +57,10 @@ setup_git_config() {
 
 print_header "🏗️ FRAPPE BENCH INITIALIZATION"
 
+# Make all scripts executable first
+print_info "Setting script permissions..."
+chmod +x /workspace/scripts/*.sh
+
 # Check if bench already exists
 if [[ -d "/workspace/frappe-bench/apps/frappe" ]]; then
     print_success "Frappe bench already initialized"
@@ -175,6 +179,14 @@ print_success "Frappe bench setup completed!"
 
 # Setup terminal environment
 print_info "Configuring terminal environment..."
-/workspace/scripts/setup-terminal.sh
+chmod +x /workspace/scripts/setup-terminal.sh
+if /workspace/scripts/setup-terminal.sh; then
+    print_success "Terminal environment configured"
+else
+    print_warning "Terminal setup had issues but continuing..."
+fi
 
-print_info "Terminal will open soon with app creation wizard..."
+print_info "Setup complete! Terminal will open soon with app creation wizard..."
+
+# Exit successfully
+exit 0

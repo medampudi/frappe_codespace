@@ -2,6 +2,11 @@
 
 # This script sets up the terminal environment with helpful aliases and welcome message
 
+# Ensure scripts directory exists and has correct permissions
+if [ -d /workspace/scripts ]; then
+    chmod +x /workspace/scripts/*.sh 2>/dev/null || true
+fi
+
 # Add create-app alias
 echo 'alias create-app="/workspace/scripts/create-app-interactive.sh"' >> ~/.bashrc
 
@@ -31,8 +36,5 @@ if [ ! -f ~/.first_terminal_shown ] && [ -f /workspace/.bench_setup_complete ]; 
     esac
 fi
 EOF
-
-# Make scripts executable
-chmod +x /workspace/scripts/*.sh
 
 echo "Terminal environment configured!"
